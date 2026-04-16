@@ -1,18 +1,27 @@
 import Minecraft from './net/minecraft/client/Minecraft.js';
 import * as aesjs from '../../libraries/aes.js';
 
+/** When embedded in FUS (Vite), `window.__LABY_MC_ASSET_BASE__` is set before launch (e.g. `/labyminecraft/`). */
+function labyMcAssetBase() {
+    if (typeof window !== 'undefined' && window.__LABY_MC_ASSET_BASE__) {
+        return String(window.__LABY_MC_ASSET_BASE__).replace(/\/?$/, '/');
+    }
+    return '';
+}
+
 class Start {
 
     loadTextures(textures) {
         let resources = [];
         let index = 0;
+        const base = labyMcAssetBase();
 
         return textures.reduce((currentPromise, texturePath) => {
             return currentPromise.then(() => {
                 return new Promise((resolve, reject) => {
                     // Load texture
                     let image = new Image();
-                    image.src = "src/resources/" + texturePath;
+                    image.src = base + 'src/resources/' + texturePath;
                     image.onload = () => resolve();
                     resources[texturePath] = image;
 
@@ -25,7 +34,7 @@ class Start {
     }
 
     launch(canvasWrapperId) {
-        this.loadTextures([
+        return this.loadTextures([
             "misc/grasscolor.png",
             "gui/font.png",
             "gui/gui.png",
@@ -44,24 +53,15 @@ class Start {
             "gui/title/background/panorama_5.png",
             "gui/container/creative.png"
         ]).then((resources) => {
-            // Launch actual game on canvas
-            window.app = new Minecraft(canvasWrapperId, resources);
+            // Launch actual game on canvas (host may keep reference on window.app for dispose)
+            const app = new Minecraft(canvasWrapperId, resources);
+            window.app = app;
+            return app;
         });
     }
 }
 
-// Listen on history back
-window.addEventListener('pageshow', function (event) {
-    if (window.app) {
-        // Reload page to restart the game
-        if (!window.app.running) {
-            window.location.reload();
-        }
-    } else {
-        // Launch game
-        new Start().launch("canvas-container");
-    }
-});
+export default Start;
 
 export function require(module) {
     return window[module];

@@ -1,6 +1,13 @@
 import Block from "../world/block/Block.js";
 import * as THREE from "../../../../../../libraries/three.module.js";
 
+function labyMcAssetBase() {
+    if (typeof window !== 'undefined' && window.__LABY_MC_ASSET_BASE__) {
+        return String(window.__LABY_MC_ASSET_BASE__).replace(/\/?$/, '/');
+    }
+    return '';
+}
+
 export default class SoundManager {
 
     constructor() {
@@ -31,8 +38,9 @@ export default class SoundManager {
 
         // Load all sounds into pool
         let path = name.replace(".", "/");
+        const base = labyMcAssetBase();
         for (let i = 0; i < amount; i++) {
-            let sound = this.loadSound('src/resources/sound/' + path + (i + 1) + '.ogg');
+            let sound = this.loadSound(base + 'src/resources/sound/' + path + (i + 1) + '.ogg');
             pool.push(sound);
         }
 

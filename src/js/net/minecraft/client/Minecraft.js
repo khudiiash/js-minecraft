@@ -100,7 +100,15 @@ export default class Minecraft {
         // Create sound manager
         this.soundManager = new SoundManager();
 
-        this.displayScreen(new GuiMainMenu());
+        // FUS embed: no title screen; world is loaded immediately by the host app
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            this.currentScreen = null;
+            this.window.updateFocusState(FocusStateType.REQUEST_EXIT);
+            this.window.updateWindowSize();
+            this.itemRenderer.rebuildAllItems();
+        } else {
+            this.displayScreen(new GuiMainMenu());
+        }
 
         // Initialize
         this.init();
@@ -139,10 +147,15 @@ export default class Minecraft {
             }
             this.displayScreen(new GuiMainMenu());
         } else {
-            // Display loading screen
-            this.loadingScreen = new GuiLoadingScreen();
-            this.loadingScreen.setTitle("Building terrain...");
-            this.displayScreen(this.loadingScreen);
+            const fusEmbed = typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__;
+            // Display loading screen (skipped in FUS — host shows its own chrome)
+            if (!fusEmbed) {
+                this.loadingScreen = new GuiLoadingScreen();
+                this.loadingScreen.setTitle("Building terrain...");
+                this.displayScreen(this.loadingScreen);
+            } else {
+                this.loadingScreen = null;
+            }
 
             // Clear previous world
             if (this.world !== null) {
@@ -164,6 +177,10 @@ export default class Minecraft {
             // Load spawn chunks and respawn player
             this.world.loadSpawnChunks();
             this.player.respawn();
+
+            if (fusEmbed) {
+                this.displayScreen(null);
+            }
         }
     }
 
@@ -246,12 +263,25 @@ export default class Minecraft {
     }
 
     displayScreen(screen) {
-        if (screen === this.currentScreen) {
+        // Allow repeated `null` when entering in-game (e.g. FUS skips loading GUI; `currentScreen` stays null)
+        if (screen === this.currentScreen && screen !== null) {
             return;
         }
 
         if (typeof screen === "undefined") {
             console.error("Tried to display an undefined screen");
+            return;
+        }
+
+        // FUS embed: allow a null GUI until loadWorld() — avoid flashing the main menu
+        if (screen === null && !this.isInGame() && typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            if (this.currentScreen !== null) {
+                this.currentScreen.onClose();
+            }
+            this.currentScreen = null;
+            this.window.updateFocusState(FocusStateType.REQUEST_EXIT);
+            this.window.updateWindowSize();
+            this.itemRenderer.rebuildAllItems();
             return;
         }
 

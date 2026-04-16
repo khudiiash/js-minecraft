@@ -4,6 +4,28 @@ import GuiIngameMenu from "./gui/screens/GuiIngameMenu.js";
 import Keyboard from "../util/Keyboard.js";
 import GuiLoadingScreen from "./gui/screens/GuiLoadingScreen.js";
 
+/**
+ * Shortcuts browsers reserve for DevTools / inspector. When we call preventDefault() on
+ * window key events, those must be skipped so DevTools (F12, Ctrl+Shift+I, etc.) still work.
+ */
+function isBrowserUiShortcut(event) {
+    if (event.code === "F12" || event.code === "F11") {
+        return true;
+    }
+    const mod = event.ctrlKey || event.metaKey;
+    if (mod && event.shiftKey) {
+        if (["KeyI", "KeyJ", "KeyC", "KeyK", "KeyE"].includes(event.code)) {
+            return true;
+        }
+    }
+    if (event.metaKey && event.altKey) {
+        if (event.code === "KeyI" || event.code === "KeyJ") {
+            return true;
+        }
+    }
+    return false;
+}
+
 export default class GameWindow {
 
     constructor(minecraft, canvasWrapperId) {
@@ -30,7 +52,18 @@ export default class GameWindow {
         this.initializeElements(canvasWrapperId);
 
         // Register listeners
-        if (this.mobileDevice) {
+        // FUS Vue embed drives touch (joystick / look / keys). Built-in mobile listeners
+        // fire onMouseClicked(2) on every touchend and Keyboard.unPressAll() on left release,
+        // which fights the overlay and can break+place in one gesture (same-cell "replace").
+        if (
+            this.mobileDevice &&
+            typeof window !== "undefined" &&
+            window.__LABY_MC_FUS_EMBED__
+        ) {
+            this.registerListener(window, "resize", () => {
+                this.updateWindowSize();
+            });
+        } else if (this.mobileDevice) {
             this.registerMobileListeners();
         } else {
             this.registerDesktopListeners();
@@ -168,8 +201,7 @@ export default class GameWindow {
             this.requestCursorUpdate();
         });
         this.registerListener(window, 'keydown', event => {
-            // Prevent browser functions except fullscreen
-            if (event.key !== 'F11') {
+            if (!isBrowserUiShortcut(event)) {
                 event.preventDefault();
             }
 
@@ -201,7 +233,7 @@ export default class GameWindow {
             if (currentScreen !== null) {
                 currentScreen.keyReleased(event.code);
             }
-        });
+        }, false);
         this.registerListener(document, 'contextmenu');
         this.registerListener(this.wrapper, 'wheel', event => {
             event.stopPropagation();
@@ -429,6 +461,16 @@ export default class GameWindow {
     }
 
     isLocked() {
+        // FUS + touch: pointer lock is often unavailable; treat in-game as “locked” so movement/look work.
+        if (
+            typeof window !== "undefined" &&
+            window.__LABY_MC_FUS_EMBED__ &&
+            this.mobileDevice &&
+            this.minecraft.isInGame() &&
+            this.minecraft.currentScreen === null
+        ) {
+            return true;
+        }
         // The actual definition for the game if the cursor is locked or not
         return this.focusState.isLock() && this.minecraft.currentScreen === null;
     }
@@ -515,6 +557,10 @@ export default class GameWindow {
     }
 
     openUrl(url, newTab) {
+        // FUS Vue embed: never navigate away (stop()/menus may run without a stable flag order).
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            return;
+        }
         if (newTab) {
             window.open(url, '_blank').focus();
         } else {
@@ -523,6 +569,11 @@ export default class GameWindow {
     }
 
     close() {
+        // Standalone game used to send users to the upstream repo. In FUS Vue embed,
+        // `Minecraft.stop()` runs on route leave / HMR — must not hijack `window.location`.
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            return;
+        }
         this.openUrl(Minecraft.URL_GITHUB);
     }
 

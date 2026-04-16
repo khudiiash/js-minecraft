@@ -27,15 +27,25 @@ export default class World {
         this.time = 0;
         this.spawn = new Vector3(0, 0, 0);
 
-        // Update lights async
+        // Update lights async (interval 0 hammers the main thread; FUS embed uses a sane cadence)
         let scope = this;
+        const fusEmbed =
+            typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__;
+        const lightTickMs = fusEmbed ? 20 : 0;
         setInterval(function () {
-            let i = scope.minecraft.loadingScreen === null ? 1000 : 100000;
+            // Vanilla uses large batches; FUS caps work per timer tick to avoid long main-thread spikes.
+            let i = fusEmbed
+                ? scope.minecraft.loadingScreen === null
+                    ? 40
+                    : 2000
+                : scope.minecraft.loadingScreen === null
+                  ? 1000
+                  : 100000;
             while (scope.lightUpdateQueue.length >= 10 && i > 0) {
                 i--;
                 scope.lightUpdateQueue.shift().updateBlockLightning(scope);
             }
-        }, 0);
+        }, lightTickMs);
     }
 
     setChunkProvider(chunkProvider) {
