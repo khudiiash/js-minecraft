@@ -63,6 +63,8 @@ export default class GameWindow {
             this.registerListener(window, "resize", () => {
                 this.updateWindowSize();
             });
+            /** Canvas GUIs (inventory, options, …): forward pointer events like desktop `mousedown`. */
+            this.registerFusEmbedGuiPointerBridge();
         } else if (this.mobileDevice) {
             this.registerMobileListeners();
         } else {
@@ -242,6 +244,74 @@ export default class GameWindow {
             let delta = Math.sign(event.deltaY);
             this.minecraft.onMouseScroll(delta);
         });
+    }
+
+    /**
+     * FUS SPA + coarse pointer: vanilla mobile listeners are disabled (they fight the Vue touch HUD).
+     * When a 2D GUI screen is open, route primary pointer events to {@link GuiScreen} on the wrapper
+     * (capture phase) so inventory/options sliders work on phones/tablets.
+     */
+    registerFusEmbedGuiPointerBridge() {
+        /** @type {number | null} */
+        this._fusGuiCaptureId = null;
+
+        const toGame = (ev) => ({
+            x: ev.clientX / this.scaleFactor,
+            y: ev.clientY / this.scaleFactor,
+        });
+
+        const onPointerDown = (ev) => {
+            if (this.minecraft.currentScreen === null) return;
+            if (!ev.isPrimary) return;
+            const { x, y } = toGame(ev);
+            this.mouseX = x;
+            this.mouseY = y;
+            const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
+            this.minecraft.currentScreen.mouseClicked(x, y, btnCode);
+            try {
+                this.wrapper.setPointerCapture(ev.pointerId);
+            } catch (_) {
+                /* ignore */
+            }
+            this._fusGuiCaptureId = ev.pointerId;
+            this.initialSoundEngine();
+            ev.preventDefault();
+            ev.stopPropagation();
+        };
+
+        const onPointerMove = (ev) => {
+            if (this._fusGuiCaptureId !== ev.pointerId) return;
+            if (this.minecraft.currentScreen === null) return;
+            const { x, y } = toGame(ev);
+            this.mouseX = x;
+            this.mouseY = y;
+            const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
+            this.minecraft.currentScreen.mouseDragged(x, y, btnCode);
+            ev.preventDefault();
+            ev.stopPropagation();
+        };
+
+        const endGuiPointer = (ev) => {
+            if (this._fusGuiCaptureId !== ev.pointerId) return;
+            if (this.minecraft.currentScreen !== null) {
+                const { x, y } = toGame(ev);
+                const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
+                this.minecraft.currentScreen.mouseReleased(x, y, btnCode);
+            }
+            try {
+                this.wrapper.releasePointerCapture(ev.pointerId);
+            } catch (_) {
+                /* ignore */
+            }
+            this._fusGuiCaptureId = null;
+            ev.preventDefault();
+            ev.stopPropagation();
+        };
+
+        this.wrapper.addEventListener("pointerdown", onPointerDown, true);
+        window.addEventListener("pointermove", onPointerMove, true);
+        window.addEventListener("pointerup", endGuiPointer, true);
+        window.addEventListener("pointercancel", endGuiPointer, true);
     }
 
     registerMobileListeners() {
