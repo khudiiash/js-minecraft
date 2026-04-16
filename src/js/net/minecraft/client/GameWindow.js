@@ -63,8 +63,8 @@ export default class GameWindow {
             this.registerListener(window, "resize", () => {
                 this.updateWindowSize();
             });
-            /** Canvas GUIs (inventory, options, …): forward pointer events like desktop `mousedown`. */
-            this.registerFusEmbedGuiPointerBridge();
+            /** In-world: hotbar slot taps. With GUI: forward pointer events like desktop `mousedown`. */
+            this.registerFusEmbedTouchInputBridge();
         } else if (this.mobileDevice) {
             this.registerMobileListeners();
         } else {
@@ -248,22 +248,55 @@ export default class GameWindow {
 
     /**
      * FUS SPA + coarse pointer: vanilla mobile listeners are disabled (they fight the Vue touch HUD).
-     * When a 2D GUI screen is open, route primary pointer events to {@link GuiScreen} on the wrapper
-     * (capture phase) so inventory/options sliders work on phones/tablets.
+     * — Window capture: bottom hotbar taps → hotbar slot (see {@link IngameOverlay#renderHotbar}).
+     * — Wrapper capture: when a 2D GUI is open, route pointer events to {@link GuiScreen}.
      */
-    registerFusEmbedGuiPointerBridge() {
+    registerFusEmbedTouchInputBridge() {
         /** @type {number | null} */
         this._fusGuiCaptureId = null;
 
-        const toGame = (ev) => ({
-            x: ev.clientX / this.scaleFactor,
-            y: ev.clientY / this.scaleFactor,
-        });
+        const clientToGame = (ev) => {
+            const r = this.wrapper.getBoundingClientRect();
+            const x = ((ev.clientX - r.left) / Math.max(1, r.width)) * this.width;
+            const y = ((ev.clientY - r.top) / Math.max(1, r.height)) * this.height;
+            return { x, y };
+        };
+
+        const fusHotbarSlotAt = (gx, gy) => {
+            const w = this.width;
+            const h = this.height;
+            const hbX = w / 2 - 91;
+            const hbY = h - 22;
+            if (gy < hbY - 6 || gy > hbY + 26) return null;
+            if (gx < hbX - 2 || gx > hbX + 182) return null;
+            const slot = Math.floor((gx - hbX) / 20);
+            if (slot < 0 || slot > 8) return null;
+            return slot;
+        };
+
+        const onWindowHotbarPointerDown = (ev) => {
+            if (!this.mobileDevice) return;
+            if (!ev.isPrimary) return;
+            if (this.minecraft.currentScreen !== null) return;
+            if (!this.minecraft.isInGame()) return;
+            const inv = this.minecraft.player?.inventory;
+            if (!inv) return;
+            const { x, y } = clientToGame(ev);
+            const slot = fusHotbarSlotAt(x, y);
+            if (slot === null) return;
+            inv.selectedSlotIndex = slot;
+            this.mouseX = x;
+            this.mouseY = y;
+            this.initialSoundEngine();
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+        };
+        window.addEventListener("pointerdown", onWindowHotbarPointerDown, true);
 
         const onPointerDown = (ev) => {
             if (this.minecraft.currentScreen === null) return;
             if (!ev.isPrimary) return;
-            const { x, y } = toGame(ev);
+            const { x, y } = clientToGame(ev);
             this.mouseX = x;
             this.mouseY = y;
             const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
@@ -282,7 +315,7 @@ export default class GameWindow {
         const onPointerMove = (ev) => {
             if (this._fusGuiCaptureId !== ev.pointerId) return;
             if (this.minecraft.currentScreen === null) return;
-            const { x, y } = toGame(ev);
+            const { x, y } = clientToGame(ev);
             this.mouseX = x;
             this.mouseY = y;
             const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
@@ -294,7 +327,7 @@ export default class GameWindow {
         const endGuiPointer = (ev) => {
             if (this._fusGuiCaptureId !== ev.pointerId) return;
             if (this.minecraft.currentScreen !== null) {
-                const { x, y } = toGame(ev);
+                const { x, y } = clientToGame(ev);
                 const btnCode = ev.button === 2 ? "Mouse2" : "Mouse0";
                 this.minecraft.currentScreen.mouseReleased(x, y, btnCode);
             }
