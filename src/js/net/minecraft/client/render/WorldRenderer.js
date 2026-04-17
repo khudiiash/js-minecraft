@@ -8,6 +8,11 @@ import Random from "../../util/Random.js";
 import Vector3 from "../../util/Vector3.js";
 import * as THREE from "../../../../../../libraries/three.module.js";
 
+/** Match classic js-minecraft + older three: atlas + vertex AO are authored for linear sampling (no extra sRGB decode). */
+if (typeof THREE.ColorManagement !== "undefined") {
+    THREE.ColorManagement.enabled = false;
+}
+
 export default class WorldRenderer {
 
     static THIRD_PERSON_DISTANCE = 4;
@@ -91,6 +96,11 @@ export default class WorldRenderer {
         this.webRenderer.setClearColor(0x000000, 0);
         this.webRenderer.clear();
 
+        // r152+ defaults + tone mapping wash out Minecraft-style atlas / vertex colors; keep output sRGB, no filmic curve.
+        this.webRenderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.webRenderer.toneMapping = THREE.NoToneMapping;
+        this.webRenderer.toneMappingExposure = 1;
+
         // Create sky
         this.generateSky();
 
@@ -101,6 +111,11 @@ export default class WorldRenderer {
             color: 0x000000
         }));
         this.scene.add(this.blockHitBox);
+
+        // FUS: proves this file is the patched fork (see `window.__FUS_LABY_ENGINE_PATCH` in DevTools).
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            window.__FUS_LABY_ENGINE_PATCH = "2026-04-14-v5";
+        }
     }
 
     render(partialTicks) {
@@ -725,6 +740,9 @@ export default class WorldRenderer {
 
             // Render hand
             player.renderer.renderRightHand(player, partialTicks);
+        }
+        if (typeof this.minecraft.fusSyncFpToolIntoFirstPerson === 'function') {
+            this.minecraft.fusSyncFpToolIntoFirstPerson(player, stack, partialTicks, hasItem);
         }
     }
 

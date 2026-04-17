@@ -31,7 +31,11 @@ export default class IngameOverlay extends Gui {
             this.renderCrosshair(stack, this.window.width / 2, this.window.height / 2)
         }
 
-        // Render hotbar
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            this.renderFusEmbedHealthBar(stack);
+        }
+
+        // Render hotbar (9 vanilla slots + FUS overflow slot — keep geometry in sync with GameWindow.js fusHotbarSlotAt)
         this.renderHotbar(stack, this.window.width / 2 - 91, this.window.height - 22);
 
         // Render chat canvas
@@ -84,31 +88,123 @@ export default class IngameOverlay extends Gui {
         this.drawSprite(stack, this.textureCrosshair, 0, 0, 15, 15, x - size / 2, y - size / 2, size, size, 0.6);
     }
 
+    /**
+     * FUS Laby: hearts from bundled `hearts_sh.png` (same 3-frame strip as Block World HUD / remotes).
+     */
+    renderFusEmbedHealthBar(stack) {
+        const w = this.window.width;
+        const h = this.window.height;
+        const rowY = h - 22 - 12;
+        const hp = Math.min(20, Math.max(0, Math.ceil(this.minecraft.player.health || 0)));
+        const img = this.minecraft.fusHeartsSheet;
+        if (img && img.complete && img.naturalWidth > 0) {
+            const iw = img.naturalWidth;
+            const ih = img.naturalHeight;
+            const frameW = iw / 3;
+            const slotW = 11;
+            const slotH = Math.round((slotW * 16) / 18);
+            const gap = 2;
+            const rowW = 10 * (slotW + gap) - gap;
+            const cx = w / 2;
+            const xStart = cx - rowW / 2;
+            stack.imageSmoothingEnabled = false;
+            for (let i = 0; i < 10; i++) {
+                const hx = xStart + i * (slotW + gap);
+                const left = hp > i * 2;
+                const right = hp > i * 2 + 1;
+                let sx = frameW * 2;
+                if (left && right) sx = 0;
+                else if (left) sx = frameW;
+                stack.drawImage(img, sx, 0, frameW, ih, hx, rowY, slotW, slotH);
+            }
+            return;
+        }
+        const padLeft = 10;
+        const hbX = w / 2 - 91 - padLeft;
+        const heartW = 9;
+        const heartH = 9;
+        const g = 1;
+        const tex = this.textureCrosshair;
+        const full = Math.floor(hp / 2);
+        const half = hp % 2;
+        for (let i = 0; i < 10; i++) {
+            const x = hbX + i * (heartW + g);
+            this.drawSprite(stack, tex, 52, 9, 9, 9, x, rowY, heartW, heartH, 1);
+        }
+        for (let i = 0; i < full; i++) {
+            const x = hbX + i * (heartW + g);
+            this.drawSprite(stack, tex, 52, 0, 9, 9, x, rowY, heartW, heartH, 1);
+        }
+        if (half === 1) {
+            const x = hbX + full * (heartW + g);
+            this.drawSprite(stack, tex, 61, 0, 9, 9, x, rowY, heartW, heartH, 1);
+        }
+    }
+
     renderHotbar(stack, x, y) {
-        // Render background
-        this.drawSprite(stack, this.textureHotbar, 0, 0, 200, 22, x, y, 200, 22)
-        this.drawSprite(
-            stack,
-            this.textureHotbar,
-            0, 22,
-            24, 24,
-            x + this.minecraft.player.inventory.selectedSlotIndex * 20 - 1, y - 1,
-            24, 24
-        )
+        // Keep in sync with GameWindow.registerFusEmbedTouchInputBridge (fusHotbarSlotAt).
+        const padLeft = 10;
+        const hbX = x - padLeft;
+        const extraGap = 2;
+        const extraW = 20;
+
+        // Render background (main strip)
+        this.drawSprite(stack, this.textureHotbar, 0, 0, 200, 22, hbX, y, 200, 22);
+        // Extra slot: reuse left cap of strip so it matches vanilla style
+        this.drawSprite(stack, this.textureHotbar, 0, 0, extraW, 22, hbX + 200 + extraGap, y, extraW, 22);
+
+        const sel = this.minecraft.player.inventory.selectedSlotIndex;
+        if (sel >= 0 && sel < 9) {
+            this.drawSprite(
+                stack,
+                this.textureHotbar,
+                0, 22,
+                24, 24,
+                hbX + sel * 20 - 1, y - 1,
+                24, 24
+            );
+        }
 
         // To make the items darker
         let brightness = this.minecraft.isPaused() ? 0.5 : 1; // TODO find a better solution
 
         this.minecraft.itemRenderer.prepareRender("hotbar");
 
-        // Render items
+        // Render items (slots 0–8)
         for (let i = 0; i < 9; i++) {
             let typeId = this.minecraft.player.inventory.getItemInSlot(i);
             if (typeId !== 0) {
                 let block = Block.getById(typeId);
-                this.minecraft.itemRenderer.renderItemInGui("hotbar", i, block, Math.floor(x + i * 20 + 11), y + 11, brightness);
+                this.minecraft.itemRenderer.renderItemInGui("hotbar", i, block, Math.floor(hbX + i * 20 + 11), y + 11, brightness);
             }
         }
+
+        // FUS: tool icons from bundled `tools.png` (same sheet as Block World modal)
+        if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__) {
+            let tex = this.minecraft.fusToolsSpriteSheet;
+            let getRect = this.minecraft.fusGetToolSpriteSrcRect;
+            let meta = this.minecraft.fusHotbarSlotMeta;
+            if (tex && tex.complete && tex.naturalWidth > 0 && typeof getRect === "function" && Array.isArray(meta)) {
+                for (let ti = 0; ti < 9; ti++) {
+                    let m = meta[ti];
+                    if (!m || m.kind !== "tool") continue;
+                    let name = m.toolMeshName;
+                    if (typeof name !== "string") continue;
+                    let r = getRect(name);
+                    if (!r) continue;
+                    let sw = 16;
+                    let sh = 16;
+                    let cx = Math.floor(hbX + ti * 20 + 10 - sw / 2);
+                    let cy = Math.floor(y + 11 - sh / 2);
+                    this.drawSprite(stack, tex, r.sx, r.sy, r.sw, r.sh, cx, cy, sw, sh, brightness);
+                }
+            }
+        }
+
+        // Overflow “…” (FUS embed): same row as hotbar, opens Vue inventory when tapped (see GameWindow)
+        const dotsX = hbX + 200 + extraGap + extraW / 2;
+        const dotsY = y + 7;
+        this.drawCenteredString(stack, "\u2022\u2022\u2022", Math.floor(dotsX), Math.floor(dotsY), 0xffe8e8f0);
     }
 
     renderLeftDebugOverlay(stack, filters = []) {

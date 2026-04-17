@@ -81,6 +81,17 @@ export default class Minecraft {
         this.frames = 0;
         this.lastTime = Date.now();
 
+        // FUS Laby: shop hotbar slot meta + optional remote melee (assigned by host app)
+        this.fusHotbarSlotMeta = null;
+        this.fusTryRemoteMelee = null;
+        this.fusToolsSpriteSheet = null;
+        this.fusGetToolSpriteSrcRect = null;
+        this.fusHeartsSheet = null;
+        /** When set, {@link WorldRenderer.renderHand} skips drawing the vanilla FP arm (FUS tool replaces it). */
+        this.fusHideVanillaFpHand = null;
+        /** After {@link WorldRenderer.renderHand} transforms, parents FUS GLTF tool onto {@link PlayerRenderer.firstPersonGroup}. */
+        this.fusSyncFpToolIntoFirstPerson = null;
+
         // Create all blocks
         BlockRegistry.create();
 
@@ -401,6 +412,12 @@ export default class Minecraft {
 
             // Destroy block
             if (button === 0) {
+                if (typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__ && typeof this.fusTryRemoteMelee === "function") {
+                    if (this.fusTryRemoteMelee()) {
+                        this.worldRenderer.flushRebuild = true;
+                        return;
+                    }
+                }
                 if (hitResult != null) {
                     // Get previous block
                     let typeId = this.world.getBlockAt(hitResult.x, hitResult.y, hitResult.z);
@@ -555,6 +572,11 @@ export default class Minecraft {
         canvas.height = image.height;
         context.imageSmoothingEnabled = false;
         context.drawImage(image, 0, 0, image.width, image.height);
-        return new THREE.CanvasTexture(canvas);
+        let texture = new THREE.CanvasTexture(canvas);
+        texture.magFilter = THREE.NearestFilter;
+        texture.minFilter = THREE.NearestFilter;
+        texture.generateMipmaps = false;
+        texture.colorSpace = THREE.NoColorSpace;
+        return texture;
     }
 }

@@ -262,12 +262,20 @@ export default class GameWindow {
             return { x, y };
         };
 
+        // FUS: geometry must match IngameOverlay.renderHotbar (padLeft, extraGap, extraW).
+        const FUS_HOTBAR_PAD_LEFT = 10;
+        const FUS_HOTBAR_EXTRA_GAP = 2;
+        const FUS_HOTBAR_EXTRA_W = 20;
+
         const fusHotbarSlotAt = (gx, gy) => {
             const w = this.width;
             const h = this.height;
-            const hbX = w / 2 - 91;
+            const hbX = w / 2 - 91 - FUS_HOTBAR_PAD_LEFT;
             const hbY = h - 22;
             if (gy < hbY - 6 || gy > hbY + 26) return null;
+            const ex0 = hbX + 200 + FUS_HOTBAR_EXTRA_GAP;
+            const ex1 = ex0 + FUS_HOTBAR_EXTRA_W;
+            if (gx >= ex0 - 2 && gx <= ex1 + 2) return 9;
             if (gx < hbX - 2 || gx > hbX + 182) return null;
             const slot = Math.floor((gx - hbX) / 20);
             if (slot < 0 || slot > 8) return null;
@@ -275,7 +283,8 @@ export default class GameWindow {
         };
 
         const onWindowHotbarPointerDown = (ev) => {
-            if (!this.mobileDevice) return;
+            const fusEmbed = typeof window !== "undefined" && window.__LABY_MC_FUS_EMBED__;
+            if (!this.mobileDevice && !fusEmbed) return;
             if (!ev.isPrimary) return;
             if (this.minecraft.currentScreen !== null) return;
             if (!this.minecraft.isInGame()) return;
@@ -284,6 +293,18 @@ export default class GameWindow {
             const { x, y } = clientToGame(ev);
             const slot = fusHotbarSlotAt(x, y);
             if (slot === null) return;
+            if (slot === 9) {
+                try {
+                    if (typeof window.__fusLabyOpenHotbarExtras === "function") {
+                        window.__fusLabyOpenHotbarExtras();
+                    }
+                } catch (_) {
+                    /* ignore */
+                }
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+                return;
+            }
             inv.selectedSlotIndex = slot;
             this.mouseX = x;
             this.mouseY = y;

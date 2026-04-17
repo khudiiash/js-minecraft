@@ -36,6 +36,10 @@ export default class ItemRenderer {
         this.webRenderer.sortObjects = false;
         this.webRenderer.setClearColor(0x000000, 0);
         this.webRenderer.clear();
+
+        this.webRenderer.outputColorSpace = THREE.SRGBColorSpace;
+        this.webRenderer.toneMapping = THREE.NoToneMapping;
+        this.webRenderer.toneMappingExposure = 1;
     }
 
     render(partialTicks) {

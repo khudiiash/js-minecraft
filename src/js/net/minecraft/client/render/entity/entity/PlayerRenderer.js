@@ -3,6 +3,18 @@ import EntityRenderer from "../EntityRenderer.js";
 import Block from "../../../world/block/Block.js";
 import * as THREE from "../../../../../../../../libraries/three.module.js";
 
+/** FUS parents GLTF under the FP arm bone; {@link PlayerRenderer.rebuild} must not hide that subtree. */
+function fusIsUnderFpToolPivot(o) {
+    let p = o.parent;
+    while (p) {
+        if (p.userData && p.userData.__fusLabyFpToolRoot) {
+            return true;
+        }
+        p = p.parent;
+    }
+    return false;
+}
+
 export default class PlayerRenderer extends EntityRenderer {
 
     constructor(worldRenderer) {
@@ -56,13 +68,30 @@ export default class PlayerRenderer extends EntityRenderer {
 
             // Create first person right hand and attach it to the holder
             this.firstPersonGroup.clear();
+            let hideVanillaFpHand = typeof this.worldRenderer.minecraft.fusHideVanillaFpHand === 'function'
+                && this.worldRenderer.minecraft.fusHideVanillaFpHand();
             this.handModel = this.model.rightArm.clone();
             this.firstPersonGroup.add(this.handModel.bone);
 
-            // Copy material and update depth test of the hand to render it always in front
-            let mesh = this.handModel.bone.children[0];
-            mesh.material = mesh.material.clone();
-            mesh.material.depthTest = false;
+            if (hideVanillaFpHand) {
+                // Keep the arm bone so {@link PlayerRenderer.renderRightHand} can run {@code copyTransformOf};
+                // hide skin geometry — FUS GLTF parents under this bone in {@code fusSyncFpToolIntoFirstPerson}.
+                this.handModel.bone.traverse((o) => {
+                    if (fusIsUnderFpToolPivot(o)) {
+                        return;
+                    }
+                    if (o.isMesh === true || o.isSkinnedMesh === true) {
+                        o.visible = false;
+                        o.material = o.material.clone();
+                        o.material.depthTest = false;
+                    }
+                });
+            } else {
+                // Copy material and update depth test of the hand to render it always in front
+                let mesh = this.handModel.bone.children[0];
+                mesh.material = mesh.material.clone();
+                mesh.material.depthTest = false;
+            }
         }
     }
 
@@ -94,6 +123,10 @@ export default class PlayerRenderer extends EntityRenderer {
     renderRightHand(player, partialTicks) {
         this.updateFirstPerson(player);
 
+        if (this.handModel == null) {
+            return;
+        }
+
         // Set transform of renderer
         this.model.swingProgress = 0;
         this.model.hasItemInHand = false;
@@ -101,7 +134,7 @@ export default class PlayerRenderer extends EntityRenderer {
         this.model.setRotationAngles(player, 0, 0, 0, 0, 0, 0);
         this.handModel.copyTransformOf(this.model.rightArm);
 
-        // Render hand model
+        // Render hand model (meshes may be hidden when FUS replaces the FP arm with a GLTF tool)
         this.handModel.render();
     }
 
